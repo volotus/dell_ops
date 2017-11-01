@@ -1,0 +1,54 @@
+# CentOS 6 Setup for IPMI 1.5 Serial over Lan to Dell Servers with BMC
+
+# This is for everyone complaining of ipmi errors like:
+#      Error activating ISOL: Command not supported in present state 
+# or
+#      Error(0xa9):Unsupported command for current BMC state.
+
+# Set up lan access so you can ipmi tool remote query for power status
+
+/etc/init.d/ipmi start
+get_ip() { host $1 | awk '/address/ { print $4 }'; }
+
+ipmitool lan set 1 ipaddr $( get_ip $( hostname -s )-ipmi.lom.example.com )
+ipmitool lan set 1 netmask 255.255.255.0
+ipmitool lan set 1 ipsrc static
+ipmitool lan set 1 arp respond on
+ipmitool lan set 1 arp generate on
+ipmitool lan set 1 arp interval 60
+ipmitool lan set 1 access on
+ipmitool user set name 2 root
+ipmitool user set password 2 topsecrets
+ipmitool user enable 2
+ipmitool user priv 2 4 1
+
+
+# Setup isol
+
+ipmitool isol set bit-rate 19.2
+ipmitool isol set privilege-level user
+ipmitool isol set enabled true
+
+# Set up Dell's syscfg
+# follow instructions at http://linux.dell.com/repo/hardware/latest/ 
+
+yum -y install syscfg
+
+/opt/dell/toolkit/bin/syscfg --conboot=enable
+/opt/dell/toolkit/bin/syscfg --conred=serial1
+/opt/dell/toolkit/bin/syscfg  --serial1=bmclan
+/opt/dell/toolkit/bin/syscfg  --fsbr=19200
+
+# Add the following console options to /boot/grub/grub.conf
+
+sed -i.bak -e 's/\(kernel .*\)/	\1 console=tty0 console=ttyS0,19200/' /boot/grub/grub.conf
+
+# Set agetty to wait for carriage return before prompting for username
+
+sed -i.bak -e 's#^exec /sbin/agetty \(.*\)#exec /sbin/agetty -L -w \1#' /etc/init/serial.conf
+
+# Reboot, you will be able to isol in now 
+
+# ipmitool -H box_you_just_booted -U root -P topsecrets isol activate
+
+
